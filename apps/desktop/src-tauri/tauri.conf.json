@@ -18,7 +18,8 @@
         "height": 700,
         "minWidth": 480,
         "minHeight": 270,
-        "focus": false
+        "focus": false,
+        "visible": false
       }
     ],
     "security": {

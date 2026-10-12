@@ -26,6 +26,18 @@ if (!notices.length) {
   if (license.length < 1000 || license.length > 2_000_000) throw new Error('Invalid upstream Node license');
   notices.push(`\n==== Node.js ${process.version}: LICENSE ====\n${license}`);
 }
+// Tauri CLI 2.12.2 downloads this DLL separately from pnpm and Cargo dependencies.
+// Keep its release-tag notice aligned when upgrading the CLI's bundled NSIS helper.
+const nsisVersion = '0.5.3';
+const nsisSource = `https://github.com/tauri-apps/nsis-tauri-utils/tree/nsis_tauri_utils-v${nsisVersion}`;
+const nsisLicense = await fetch(
+  `https://raw.githubusercontent.com/tauri-apps/nsis-tauri-utils/nsis_tauri_utils-v${nsisVersion}/LICENSE_MIT`,
+);
+if (!nsisLicense.ok) throw new Error('NSIS helper license notice unavailable; cannot redistribute installer');
+const nsisText = await nsisLicense.text();
+if (!nsisText.includes('Permission is hereby granted') || nsisText.length > 128_000)
+  throw new Error('Invalid NSIS helper notice');
+notices.push(`\n==== nsis-tauri-utils ${nsisVersion} (MIT option) ====\nSource: ${nsisSource}\n${nsisText}`);
 const store = resolve('node_modules/.pnpm');
 for (const entry of await readdir(store, { withFileTypes: true })) {
   if (!entry.isDirectory() || entry.name === 'node_modules') continue;

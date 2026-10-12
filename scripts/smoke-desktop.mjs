@@ -216,7 +216,9 @@ try {
   );
   coldHostPid = coldPreferences.processId;
   if (!coldPreferences.visible || coldPreferences.focused)
-    throw new Error('Cold auto-open must be visible without taking focus');
+    throw new Error(
+      `Cold auto-open must be visible without taking focus: ${JSON.stringify(coldPreferences)}`,
+    );
   if (!Number.isSafeInteger(coldHostPid) || coldHostPid <= 0)
     throw new Error('Native cold-launch PID unavailable');
   await expect(page.locator('.app')).toHaveClass(/theme-glacier/);

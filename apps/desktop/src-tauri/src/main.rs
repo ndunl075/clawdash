@@ -287,7 +287,16 @@ fn main() {
                 let _ = reveal(&window, focus);
             }
         }))
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                // The plugin restores visibility by explicitly taking focus. Launch policy
+                // owns visibility so an agent-start can preserve the coding window's focus.
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::all()
+                        & !tauri_plugin_window_state::StateFlags::VISIBLE,
+                )
+                .build(),
+        )
         .manage(Companion(Mutex::new(None), AtomicBool::new(false)))
         .manage(CloseToTray(AtomicBool::new(false)))
         .manage(SaveWriter(Mutex::new(())))

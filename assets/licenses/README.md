@@ -7,3 +7,5 @@ React, Phaser, Vite, TypeScript, Zod and the Tauri JavaScript API use MIT-compat
 Before publishing a release, retain upstream notices for all redistributed binaries and review the actual Cargo.lock and pnpm-lock.yaml. No paid or proprietary audio/image dependency is required.
 
 `collect-notices.mjs` includes matching Node notices, JavaScript notices, Rust license declarations with exact crate source URLs, and the full unmodified source of MPL-2.0 crates alongside the installer resources. Dual-licensed crates are used under their MIT/Apache-compatible option. caniuse-lite build data carries CC-BY-4.0 attribution in its collected upstream notices. Do not remove the generated licenses directory when redistributing the companion or installer.
+
+The separately downloaded `nsis-tauri-utils` v0.5.3 helper is used under its MIT option; its complete release-tag notice and [versioned source provenance](https://github.com/tauri-apps/nsis-tauri-utils/tree/nsis_tauri_utils-v0.5.3) are appended to bundled notices. Keep this helper notice aligned with Tauri CLI upgrades.

@@ -17,6 +17,13 @@ $taskOriginal = '{"theme":"fixture","hooks":{"Stop":[{"hooks":[{"type":"command"
 $taskPriorProfile = $env:USERPROFILE
 $taskPriorRuntime = $env:CLAWDASH_HOME
 $taskPriorExe = $env:CLAWDASH_NATIVE_EXE
+$taskDebugPolicy = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+# Elevated hosted runners ignore WEBVIEW2_* debugging variables. Scope the documented
+# machine policy to this disposable VM's installed test executable, and remove it below.
+# https://github.com/MicrosoftEdge/WebView2Feedback/issues/5645
+if (Get-ItemProperty -LiteralPath $taskDebugPolicy -Name 'clawdash.exe' -ErrorAction SilentlyContinue) {
+  throw 'Refusing to overwrite existing WebView2 test policy.'
+}
 try {
   $taskInstaller = Start-Process -FilePath $taskCandidates[0].FullName -ArgumentList @('/S', ('/D=' + $taskInstall)) -WindowStyle Hidden -Wait -PassThru
   if ($taskInstaller.ExitCode -notin @(0, 3010)) { throw ('Installer failed: ' + $taskInstaller.ExitCode) }
@@ -24,6 +31,8 @@ try {
   $taskCli = Join-Path $taskInstall 'clawdash-cli.exe'
   if (-not (Test-Path -LiteralPath $taskExe) -or -not (Test-Path -LiteralPath $taskCli)) { throw 'Installed executables missing.' }
   $env:CLAWDASH_NATIVE_EXE = $taskExe
+  New-Item -Path $taskDebugPolicy -Force | Out-Null
+  New-ItemProperty -LiteralPath $taskDebugPolicy -Name 'clawdash.exe' -Value '--remote-debugging-port=47932' -PropertyType String -Force | Out-Null
   node scripts/smoke-desktop.mjs
   if ($LASTEXITCODE -ne 0) { throw 'Installed native lifecycle failed.' }
   $env:USERPROFILE = $taskProfile
@@ -45,6 +54,7 @@ try {
   if (-not (Test-Path -LiteralPath (Join-Path $taskRuntime 'game-save.json'))) { throw 'Uninstaller removed progress.' }
   Write-Output 'Actual per-user NSIS install, installed native no-Node-PATH lifecycle, owned-hook removal and progress-preserving uninstall pass.'
 } finally {
+  Remove-ItemProperty -LiteralPath $taskDebugPolicy -Name 'clawdash.exe' -ErrorAction SilentlyContinue
   $env:USERPROFILE = $taskPriorProfile
   $env:CLAWDASH_HOME = $taskPriorRuntime
   $env:CLAWDASH_NATIVE_EXE = $taskPriorExe
