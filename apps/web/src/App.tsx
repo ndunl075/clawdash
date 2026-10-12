@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { curatedLevels } from '../../../packages/level-content/src/index';
-import { parseLevel, type LevelSpec } from '../../../packages/level-schema/src/index';
+import type { LevelSpec } from '../../../packages/level-schema/src/index';
 import type { RunState } from '../../../packages/game/src/simulation/index';
 import { GameHost } from '../../../packages/game/src/renderer/index';
 import { loadSave, persist, type Save, type Settings } from './storage';
+import { applyRunProgress, recordKey, RunProgressTracker } from './storage/progress';
+import { cacheRepoLevel, prepareRepoLevel } from './storage/repo-cache';
 import { Companion, type Session } from './bridge';
 import { enableOffline, disableOffline } from './offline';
 import { DesktopSettings, isDesktop, native } from './DesktopSettings';
@@ -59,7 +61,17 @@ function Landscape() {
 }
 
 export function App() {
-  const [save, setSave] = useState<Save>();
+  const [save, setSaveState] = useState<Save>();
+  const saveRef = useRef<Save | undefined>(undefined);
+  // Keep the latest save synchronously available to pagehide; React may not render again on exit.
+  const setSave = useCallback(
+    (value: Save | undefined | ((current: Save | undefined) => Save | undefined)) => {
+      const next = typeof value === 'function' ? value(saveRef.current) : value;
+      saveRef.current = next;
+      setSaveState(next);
+    },
+    [],
+  );
   const [screen, setScreen] = useState<Screen>('home');
   const [level, setLevel] = useState<LevelSpec>(curatedLevels[0]!);
   const [practice, setPractice] = useState(false);
@@ -77,10 +89,25 @@ export function App() {
   const main = useRef<HTMLElement>(null);
   useEffect(() => {
     void loadSave().then(setSave);
-    if (isDesktop())
-      void native<{ url: string; token: string }>('bridge_connection')
-        .then((c) => setCompanion(new Companion(c.url, c.token)))
-        .catch(() => setNotice('Desktop companion unavailable. Arcade is ready.'));
+    if (!isDesktop()) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let tries = 0;
+    const connect = async () => {
+      try {
+        const c = await native<{ url: string; token: string }>('bridge_connection');
+        if (!cancelled) setCompanion(new Companion(c.url, c.token));
+      } catch {
+        if (cancelled) return;
+        if (++tries >= 16) setNotice('Desktop companion unavailable. Arcade is ready.');
+        else timer = setTimeout(() => void connect(), 650);
+      }
+    };
+    void connect();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, []);
   useEffect(() => {
     if (save) void persist(save).then((ok) => setStorageFailed(!ok));
@@ -123,34 +150,14 @@ export function App() {
       clearInterval(timer);
     };
   }, [companion]);
+  const progressTracker = useMemo(() => new RunProgressTracker(level), [level, runKey]);
   const updateRun = useCallback(
-    (state: RunState) => {
+    (state: RunState, flush = false) => {
       setRun(state);
-      if (state.status === 'dead' || state.status === 'completed')
-        setSave((current) => {
-          if (!current) return current;
-          const key = `${level.levelId}:${state.practice ? 'practice' : 'normal'}`;
-          const old = current.records[key];
-          return {
-            ...current,
-            lastLevel: level.levelId,
-            records: {
-              ...current.records,
-              [key]: {
-                best: Math.max(old?.best ?? 0, state.progress),
-                attempts: (old?.attempts ?? 0) + 1,
-                completed: !!old?.completed || state.status === 'completed',
-                ...(state.status === 'completed'
-                  ? { ticks: Math.min(old?.ticks ?? Infinity, state.tick) }
-                  : old?.ticks !== undefined
-                    ? { ticks: old.ticks }
-                    : {}),
-              },
-            },
-          };
-        });
+      const update = progressTracker.observe(state, flush);
+      if (update) setSave((current) => (current ? applyRunProgress(current, update) : current));
     },
-    [level],
+    [progressTracker, setSave],
   );
   useEffect(() => {
     if (screen !== 'game' || !mount.current || !save) return;
@@ -163,9 +170,15 @@ export function App() {
     });
     host.current = instance;
     mount.current.focus();
+    const saveBeforeExit = () => {
+      instance.flushProgress();
+      if (saveRef.current) void persist(saveRef.current);
+    };
+    window.addEventListener('pagehide', saveBeforeExit);
     return () => {
       instance.destroy();
       host.current = undefined;
+      window.removeEventListener('pagehide', saveBeforeExit);
     };
     // Settings apply through configure without rebuilding the simulation.
   }, [screen, runKey, level, practice, updateRun]);
@@ -226,7 +239,10 @@ export function App() {
         ? 'Connection lost / unknown'
         : (stateLabel[selectedSession.state] ?? 'Agent ready')
       : 'Waiting for agent';
-  const best = save.records[`${level.levelId}:${practice ? 'practice' : 'normal'}`]?.best ?? 0;
+  const best = save.records[recordKey(level, practice)]?.best ?? 0;
+  const lastLevel = [...curatedLevels, ...save.cachedRepoLevels].find(
+    (item) => item.levelId === save.lastLevel,
+  );
   return (
     <div
       className={`app theme-${save.settings.theme} ${save.settings.reducedMotion ? 'reduced-motion' : ''} ${screen === 'game' ? 'in-game' : ''}`}
@@ -272,13 +288,9 @@ export function App() {
                 <span>/</span>
                 <button onClick={() => setScreen('repo')}>Connect an agent ↗</button>
               </div>
-              {save.lastLevel && curatedLevels.some((l) => l.levelId === save.lastLevel) && (
-                <button
-                  className="resume-link"
-                  onClick={() => play(curatedLevels.find((l) => l.levelId === save.lastLevel) ?? level)}
-                >
-                  ↺ Return to{' '}
-                  {curatedLevels.find((l) => l.levelId === save.lastLevel)?.displayName ?? 'your last run'}
+              {lastLevel && (
+                <button className="resume-link" onClick={() => play(lastLevel)}>
+                  ↺ Return to {lastLevel.displayName}
                 </button>
               )}
             </div>
@@ -304,7 +316,7 @@ export function App() {
             </div>
             <div className="level-list">
               {curatedLevels.map((l, index) => {
-                const record = save.records[`${l.levelId}:${practice ? 'practice' : 'normal'}`];
+                const record = save.records[recordKey(l, practice)];
                 return (
                   <button key={l.levelId} className={`level-card level-${index}`} onClick={() => play(l)}>
                     <div className="level-art" aria-hidden="true">
@@ -651,6 +663,8 @@ export function App() {
             onSelectSession={setActiveSession}
             onConnect={setCompanion}
             onPlay={(l) => play(l, false)}
+            cachedLevels={save.cachedRepoLevels}
+            onGenerated={(l) => setSave((current) => (current ? cacheRepoLevel(current, l) : current))}
             onNotice={setNotice}
           />
         )}
@@ -717,6 +731,8 @@ function CompanionPage({
   onConnect,
   onPlay,
   onNotice,
+  cachedLevels,
+  onGenerated,
 }: {
   companion?: Companion;
   connected: boolean;
@@ -726,6 +742,8 @@ function CompanionPage({
   onConnect: (client: Companion | undefined) => void;
   onPlay: (level: LevelSpec) => void;
   onNotice: (text: string) => void;
+  cachedLevels: LevelSpec[];
+  onGenerated: (level: LevelSpec) => void;
 }) {
   const [address, setAddress] = useState(
     location.hostname === '127.0.0.1' ? location.origin : 'http://127.0.0.1:',
@@ -833,7 +851,9 @@ function CompanionPage({
                   folderGrantId: grant,
                   difficulty: Number(difficulty),
                 });
-                setGenerated(parseLevel(l));
+                const generatedLevel = prepareRepoLevel(l);
+                onGenerated(generatedLevel);
+                setGenerated(generatedLevel);
               } catch (e) {
                 onNotice(e instanceof Error ? e.message : 'Generation failed');
               } finally {
@@ -894,6 +914,30 @@ function CompanionPage({
           )}
         </div>
         <div>
+          {cachedLevels.length > 0 && (
+            <section className="cached-tracks" aria-label="Saved repo tracks">
+              <h3>Your saved tracks</h3>
+              <p className="muted">
+                Ready to replay without the companion. Your five most recent tracks stay on this device.
+              </p>
+              {cachedLevels.map((item) => (
+                <button
+                  key={item.levelId}
+                  className="session"
+                  onClick={() => onPlay(item)}
+                  aria-label={`Play saved ${item.displayName}`}
+                >
+                  <span>
+                    <b>{item.displayName}</b>
+                    <small>
+                      {Math.round(item.totalTicksEstimate / 60)}s · Difficulty {item.difficultyTier}/5
+                    </small>
+                  </span>
+                  <span>Play ↗</span>
+                </button>
+              ))}
+            </section>
+          )}
           <h3>Agent signal</h3>
           <p className="muted">
             Opt in from your companion with <code>clawdash integrations install claude</code>. It previews the

@@ -107,7 +107,12 @@ test('paired repo generation uses grant IDs and bearer headers, with independent
             ? { healthy: true }
             : body.method === 'inspectRepo'
               ? { snapshot: 'HEAD', fileCount: 42, commitCount: 7, verified: true }
-              : { ...curatedLevels[0], mode: 'repo', displayName: 'Local signal' },
+              : {
+                  ...curatedLevels[0],
+                  mode: 'repo',
+                  levelId: 'repo-local-signal-test',
+                  displayName: 'Local signal',
+                },
       },
     });
   });
@@ -142,6 +147,81 @@ test('paired repo generation uses grant IDs and bearer headers, with independent
   await expect(page.locator('canvas')).toBeVisible();
   await expect(page.locator('.agent-indicator')).toContainText('Turn ended');
   expect(methods).toEqual(['health', 'inspectRepo', 'generateRepoLevel']);
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await page.reload();
+  await page.getByRole('button', { name: /Return to Local signal/ }).click();
+  await expect(page.locator('.hud-title')).toContainText('Local signal');
+  await expect(page.locator('canvas')).toBeVisible();
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await page.getByRole('button', { name: 'Back to tracks' }).click();
+  await page.getByRole('button', { name: 'Clawdash home' }).click();
+  await page.getByRole('button', { name: /Run your repo/ }).click();
+  await expect(page.getByRole('button', { name: 'Play saved Local signal' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Pair companion/ })).toBeVisible();
+});
+
+test('early exit retains partial bests and one attempt independently for normal and practice', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /Let’s play/ }).click();
+  await page.locator('.level-card').first().click();
+  await expect(page.locator('.hud-progress > b')).not.toHaveText('0%');
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await page.getByRole('button', { name: 'Back to tracks' }).click();
+  const normalBest = await page.locator('.level-card').first().locator('.best-line b').innerText();
+  expect(normalBest).not.toBe('0%');
+  await page.getByRole('button', { name: 'Practice', exact: true }).click();
+  await expect(page.locator('.level-card').first().locator('.best-line b')).toHaveText('0%');
+  await page.locator('.level-card').first().click();
+  await expect(page.locator('.hud-progress > b')).not.toHaveText('0%');
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await page.getByRole('button', { name: 'Back to tracks' }).click();
+  await page.reload();
+  await page.getByRole('button', { name: /Let’s play/ }).click();
+  await expect(page.locator('.level-card').first().locator('.best-line b')).toHaveText(normalBest);
+  const records = await page.evaluate(
+    async () =>
+      await new Promise<Record<string, { attempts: number; best: number }>>((resolve) => {
+        const request = indexedDB.open('clawdash-local', 1);
+        request.onsuccess = () => {
+          const read = request.result.transaction('saves').objectStore('saves').get('v1');
+          read.onsuccess = () => resolve(read.result.records);
+        };
+      }),
+  );
+  const prefix = `${curatedLevels[0]!.levelId}:${curatedLevels[0]!.physicsVersion}:`;
+  expect(records[`${prefix}normal`]?.attempts).toBe(1);
+  expect(records[`${prefix}normal`]?.best).toBeGreaterThan(0);
+  expect(records[`${prefix}practice`]?.attempts).toBe(1);
+  expect(records[`${prefix}practice`]?.best).toBeGreaterThan(0);
+});
+
+test('desktop companion startup retries while Arcade is immediately available', async ({ page }) => {
+  await page.addInitScript(() => {
+    let attempts = 0;
+    Object.assign(window, {
+      __TAURI_INTERNALS__: {
+        invoke: async (command: string) => {
+          if (command === 'load_save') return null;
+          if (command === 'persist_save') return undefined;
+          if (command === 'bridge_connection') {
+            if (++attempts < 3) throw new Error('starting');
+            return { url: location.origin, token: 'native-pairing' };
+          }
+          throw new Error('Unexpected command');
+        },
+      },
+    });
+  });
+  await page.route('**/events', (route) =>
+    route.fulfill({ json: { v: 1, sessions: [], events: [], cursor: 0 } }),
+  );
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: /Let’s play/ })).toBeVisible();
+  await page.getByRole('button', { name: /Run your repo/ }).click();
+  await expect(page.getByText('Connected locally')).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText('Desktop companion unavailable. Arcade is ready.')).not.toBeVisible();
 });
 
 test('unknown saved schema is preserved and Arcade remains playable', async ({ page }) => {

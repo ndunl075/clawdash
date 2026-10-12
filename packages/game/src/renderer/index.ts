@@ -24,7 +24,7 @@ export type GameOptions = {
   music: number;
   sfx: number;
   muted: boolean;
-  onState: (state: RunState) => void;
+  onState: (state: RunState, flush?: boolean) => void;
   onPause: () => void;
 };
 export class GameHost {
@@ -43,6 +43,7 @@ export class GameHost {
     this.element = element;
     this.options = options;
     this.state = createRun(options.level, options.practice);
+    this.synth.selectPatch(options.level.audioId);
     this.synth.configure(options.music, options.sfx, options.muted);
     this.synth.unlock();
     const owner = this;
@@ -133,6 +134,7 @@ export class GameHost {
     this.synth.configure(options.music, options.sfx, options.muted);
   }
   pause(value: boolean): void {
+    if (value) this.flushProgress();
     this.paused = value;
     this.held = false;
     this.pressed = false;
@@ -143,6 +145,7 @@ export class GameHost {
     }
   }
   retry(): void {
+    this.flushProgress();
     this.state =
       this.options.practice && this.state.checkpoint
         ? restoreCheckpoint(this.options.level, this.state)
@@ -158,6 +161,9 @@ export class GameHost {
   checkpoint(): void {
     this.state = setCheckpoint(this.options.level, this.state);
     this.options.onState(this.state);
+  }
+  flushProgress(): void {
+    this.options.onState(this.state, true);
   }
   private update(delta: number): void {
     if (this.paused || this.state.status !== 'playing') return;
@@ -301,6 +307,7 @@ export class GameHost {
     }
   }
   destroy(): void {
+    this.flushProgress();
     this.element.removeEventListener('pointerdown', this.pointerDown);
     window.removeEventListener('pointerup', this.release);
     window.removeEventListener('pointercancel', this.release);

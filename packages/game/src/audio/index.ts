@@ -1,10 +1,62 @@
 /** Original procedural score: no samples, network requests, or third-party composition. */
+type Patch = {
+  root: number;
+  melody: readonly number[];
+  bass: readonly number[];
+  subdivisions: number;
+  timbre: OscillatorType;
+  length: number;
+  gain: number;
+};
+const patches: Record<string, Patch> = {
+  'first-light': {
+    root: 130.81,
+    melody: [0, 7, 12, 7, 3, 10, 15, 10, 5, 12, 17, 12, 3, 7, 10, 7],
+    bass: [0, 3, 5, 3],
+    subdivisions: 2,
+    timbre: 'triangle',
+    length: 0.22,
+    gain: 1,
+  },
+  overclock: {
+    root: 146.83,
+    melody: [12, 7, 0, 7, 15, 12, 7, 3, 17, 12, 5, 12, 19, 14, 7, 10],
+    bass: [0, 0, 5, 7],
+    subdivisions: 4,
+    timbre: 'square',
+    length: 0.08,
+    gain: 0.4,
+  },
+  'night-shift': {
+    root: 110,
+    melody: [12, -1, 19, 15, 10, -1, 17, 14, 8, 15, -1, 19, 7, 14, 10, -1],
+    bass: [0, -2, -4, -5],
+    subdivisions: 2,
+    timbre: 'sine',
+    length: 0.35,
+    gain: 1.2,
+  },
+  'pulse-120': {
+    root: 123.47,
+    melody: [0, 12, 7, 15, 0, 10, 7, 12],
+    bass: [0, 3, 5, 7],
+    subdivisions: 2,
+    timbre: 'triangle',
+    length: 0.16,
+    gain: 0.8,
+  },
+};
 export class Synth {
   private context?: AudioContext;
   private music = 0.3;
   private effects = 0.45;
   private muted = false;
   private beat = -1;
+  private patch = patches['pulse-120']!;
+  selectPatch(audioId: string): void {
+    this.patch = Object.hasOwn(patches, audioId) ? patches[audioId]! : patches['pulse-120']!;
+    this.reset();
+  }
   unlock(): void {
     try {
       this.context ??= new AudioContext();
@@ -38,13 +90,19 @@ export class Synth {
     osc.stop(t + duration + 0.02);
   }
   tick(tick: number, bpm: number): void {
-    const beat = Math.floor((((tick / 60) * bpm) / 60) * 2);
+    const patch = this.patch;
+    const beat = Math.floor((((tick / 60) * bpm) / 60) * patch.subdivisions);
     if (beat === this.beat) return;
     this.beat = beat;
-    const melody = [0, 7, 12, 7, 3, 10, 15, 10, 5, 12, 17, 12, 3, 7, 10, 7];
-    this.note(130.81 * 2 ** ((melody[beat % 16] ?? 0) / 12), 0.22, this.music, 'triangle');
-    if (beat % 4 === 0) this.note(65.4 * 2 ** ((melody[beat % 16] ?? 0) / 12), 0.32, this.music * 1.4);
-    if (beat % 2 === 0) this.note(48, 0.09, this.music * 1.2);
+    const note = patch.melody[beat % patch.melody.length] ?? -1;
+    if (note >= 0)
+      this.note(patch.root * 2 ** (note / 12), patch.length, this.music * patch.gain, patch.timbre);
+    if (beat % (patch.subdivisions * 2) === 0) {
+      const bass = patch.bass[Math.floor(beat / (patch.subdivisions * 4)) % patch.bass.length] ?? 0;
+      this.note((patch.root / 2) * 2 ** (bass / 12), 0.38, this.music * 1.4);
+    }
+    if (beat % patch.subdivisions === 0) this.note(48, 0.09, this.music * 1.2);
+    if (beat % patch.subdivisions === patch.subdivisions - 1) this.note(4200, 0.025, this.music * 0.1);
   }
   jump(): void {
     this.note(440, 0.07, this.effects, 'triangle');

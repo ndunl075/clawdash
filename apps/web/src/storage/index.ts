@@ -12,6 +12,7 @@ export type Save = {
   settings: Settings;
   records: Record<string, RecordEntry>;
   lastLevel: string;
+  cachedRepoLevels: LevelSpec[];
 };
 const defaults = (): Save => ({
   version: 1,
@@ -25,6 +26,7 @@ const defaults = (): Save => ({
   },
   records: {},
   lastLevel: '',
+  cachedRepoLevels: [],
 });
 let database: Promise<IDBDatabase> | undefined;
 let readOnly = false;
@@ -85,13 +87,42 @@ export async function loadSave(): Promise<Save> {
             ...(Number.isFinite(r.ticks) ? { ticks: r.ticks } : {}),
           };
       }
+    // Unversioned keys were written only by the initial shipping physics. Never guess a
+    // legacy record's version after a future physics upgrade, or migrate unknown repo IDs.
+    for (const level of curatedLevels.filter((item) => item.physicsVersion === 'clawdash-physics-1')) {
+      for (const practice of [false, true]) {
+        const legacyKey = `${level.levelId}:${practice ? 'practice' : 'normal'}`;
+        const legacy = result.records[legacyKey];
+        if (!legacy) continue;
+        const key = recordKey(level, practice);
+        const existing = result.records[key];
+        result.records[key] = existing
+          ? {
+              best: Math.max(existing.best, legacy.best),
+              attempts: existing.attempts + legacy.attempts,
+              completed: existing.completed || legacy.completed,
+              ...(existing.ticks !== undefined || legacy.ticks !== undefined
+                ? { ticks: Math.min(existing.ticks ?? Infinity, legacy.ticks ?? Infinity) }
+                : {}),
+            }
+          : legacy;
+        delete result.records[legacyKey];
+      }
+    }
+    result.cachedRepoLevels = readRepoCache(v.cachedRepoLevels);
   } catch {
     // A failed read must not replace a damaged or inaccessible existing save.
     readOnly = true;
   }
   return result;
 }
-export async function persist(save: Save): Promise<boolean> {
+let writeQueue: Promise<boolean> = Promise.resolve(true);
+export function persist(save: Save): Promise<boolean> {
+  // Preserve snapshot order across native IPC as well as browser transactions.
+  writeQueue = writeQueue.then(() => writeSave(save));
+  return writeQueue;
+}
+async function writeSave(save: Save): Promise<boolean> {
   if (readOnly) return false;
   try {
     if ('__TAURI_INTERNALS__' in window) {
@@ -111,3 +142,7 @@ export async function persist(save: Save): Promise<boolean> {
     return false;
   }
 }
+import { curatedLevels } from '../../../../packages/level-content/src/index';
+import type { LevelSpec } from '../../../../packages/level-schema/src/index';
+import { recordKey } from './progress';
+import { readRepoCache } from './repo-cache';
