@@ -68,7 +68,7 @@ export function reduceAgentEvent(state: AgentState, input: AgentEvent): AgentSta
     case 'agent.activity':
       if (event.category !== 'session_available') {
         session.toolActivityCount++;
-        if (!prior || prior.state === 'idle') session.state = 'working';
+        if (!prior || prior.state === 'idle' || prior.state === 'attention') session.state = 'working';
       }
       break;
     case 'agent.needs_attention':

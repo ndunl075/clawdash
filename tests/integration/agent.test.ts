@@ -61,6 +61,30 @@ describe('Agent lifecycle and privacy', () => {
     state = reduceAgentEvent(state, normalize('PostToolUseFailure'));
     expect(getSessions(state)[0].state).toBe('working');
   });
+  it('clears attention after tool activity resumes without reviving ended turns', () => {
+    const start = normalize('UserPromptSubmit');
+    let state = reduceAgentEvent(createAgentState(), start);
+    const attention = {
+      ...normalize('PermissionRequest'),
+      occurredAt: new Date(Date.parse(start.occurredAt) + 10).toISOString(),
+    };
+    state = reduceAgentEvent(state, attention);
+    expect(getSessions(state)[0].state).toBe('attention');
+    state = reduceAgentEvent(state, {
+      ...normalize('PostToolUse'),
+      occurredAt: new Date(Date.parse(start.occurredAt) + 20).toISOString(),
+    });
+    expect(getSessions(state)[0].state).toBe('working');
+    state = reduceAgentEvent(state, {
+      ...normalize('Stop'),
+      occurredAt: new Date(Date.parse(start.occurredAt) + 30).toISOString(),
+    });
+    state = reduceAgentEvent(state, {
+      ...normalize('PostToolUse'),
+      occurredAt: new Date(Date.parse(start.occurredAt) + 40).toISOString(),
+    });
+    expect(getSessions(state)[0].state).toBe('turn_ended');
+  });
 });
 describe('Safe settings and atomic persistence', () => {
   it('keeps practice completion separate and salvages fields without wiping valid records', () => {

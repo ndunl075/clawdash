@@ -4,21 +4,20 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
-import { startBridge, grantFolder } from '../../local-bridge/src/index';
 import { ensureRuntime, runtimeHome, discover } from '../../local-bridge/src/runtime';
 import { atomicWrite, readBounded } from '../../storage/src/atomic';
-import { installClaudeHooks, uninstallClaudeHooks, settingsPath } from './hooks';
 import { emitHook, readHookStdin, maybeLaunch } from './emitter';
-import { gameSaveStore, readGameSaveInput } from '../../storage/src/game-save';
 
-export async function main(args = process.argv.slice(isSea() ? 1 : 2)) {
+export async function main(args = process.argv.slice(2)) {
   const [command, ...rest] = args,
     home = runtimeHome();
   if (command === 'hook') {
     await emitHook(await readHookStdin(), home);
     return;
   }
+  const { installClaudeHooks, uninstallClaudeHooks, settingsPath } = await import('./hooks');
   if (command === 'storage-load' || command === 'storage-save') {
+    const { gameSaveStore, readGameSaveInput } = await import('../../storage/src/game-save');
     await ensureRuntime(home);
     const store = gameSaveStore(join(home, 'game-save.json'));
     if (command === 'storage-load') console.log(JSON.stringify(await store.load()));
@@ -29,6 +28,7 @@ export async function main(args = process.argv.slice(isSea() ? 1 : 2)) {
     return;
   }
   if (command === 'bridge') {
+    const { startBridge } = await import('../../local-bridge/src/index');
     const staticIndex = rest.indexOf('--static'),
       staticRoot = staticIndex >= 0 ? resolve(rest[staticIndex + 1] ?? '') : undefined;
     // Lazy import keeps the emitter path free of Git, generation and simulation work.
@@ -62,6 +62,7 @@ export async function main(args = process.argv.slice(isSea() ? 1 : 2)) {
     return;
   }
   if (command === 'grant') {
+    const { grantFolder } = await import('../../local-bridge/src/index');
     if (!rest[0]) throw new Error('Usage: clawdash grant PATH');
     console.log(await grantFolder(rest[0], home));
     return;

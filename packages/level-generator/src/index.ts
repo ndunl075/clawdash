@@ -95,19 +95,32 @@ export function seededRandom(seed: string): () => number {
   };
 }
 
-function git(cwd: string, args: string[], maxBuffer = MAX_BYTES): Promise<Buffer> {
+function gitBounded(
+  cwd: string,
+  args: string[],
+  maxBuffer = MAX_BYTES,
+  deadline = Date.now() + 6000,
+): Promise<Buffer> {
   return new Promise((resolveOutput, reject) => {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      reject(new Error('Repository inspection exceeded its 15-second budget.'));
+      return;
+    }
+    const environment = Object.fromEntries(
+      Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')),
+    );
     execFile(
       'git',
-      ['--no-optional-locks', '-c', 'core.quotepath=false', ...args],
+      ['--no-optional-locks', '-c', 'core.quotepath=false', '-c', 'core.fsmonitor=false', ...args],
       {
         cwd,
         windowsHide: true,
-        timeout: 6000,
+        timeout: Math.min(6000, remaining),
         maxBuffer,
         encoding: 'buffer',
         env: {
-          ...process.env,
+          ...environment,
           GIT_TERMINAL_PROMPT: '0',
           GIT_NO_REPLACE_OBJECTS: '1',
           GIT_CONFIG_NOSYSTEM: '1',
@@ -141,12 +154,17 @@ const extensions: Record<string, string> = {
   md: 'Markdown',
 };
 export async function inspectRepository(directory: string): Promise<RepoDescriptor> {
+  const deadline = Date.now() + 15000;
+  const git = (cwd: string, args: string[], maxBuffer = MAX_BYTES) =>
+    gitBounded(cwd, args, maxBuffer, deadline);
   const root = await realpath(resolve(directory));
   const reported = (await git(root, ['rev-parse', '--show-toplevel'])).toString('utf8').trim();
   if ((await realpath(reported)) !== root) throw new Error('Choose the repository root folder.');
   const snapshotId = (await git(root, ['rev-parse', '--verify', 'HEAD^{commit}'])).toString('ascii').trim();
   if (!/^[a-f0-9]{40,64}$/.test(snapshotId))
     throw new Error('Make an initial commit before generating a Repo Run.');
+  if ((await git(root, ['rev-parse', '--is-shallow-repository'], 64)).toString('ascii').trim() === 'true')
+    throw new Error('Fetch full repository history before generating a reproducible Repo Run.');
   const tree = (await git(root, ['ls-tree', '-rz', '--full-tree', snapshotId])).toString('utf8');
   const records = tree.split('\0').filter(Boolean);
   if (records.length > MAX_FILES)
