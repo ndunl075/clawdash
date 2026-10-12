@@ -61,7 +61,8 @@ export async function installClaudeHooks(invocation: HookInvocation, path = sett
   )
     throw new Error('Use an absolute executable path');
   if (!(await stat(invocation.command)).isFile()) throw new Error('Hook executable missing');
-  const config = removeOwned(await readConfig(path), await readOwned(path));
+  const previousOwned = await readOwned(path);
+  const config = removeOwned(await readConfig(path), previousOwned);
   if (config.allowManagedHooksOnly === true || config.disableAllHooks === true)
     throw new Error('Claude policy disables user hooks; settings preserved');
   const hooks = { ...((config.hooks ?? {}) as Config) };
@@ -89,8 +90,9 @@ export async function installClaudeHooks(invocation: HookInvocation, path = sett
   }
   await backup(path);
   // Persist ownership first: interrupted installs can remove only exact entries, never unrelated hooks.
-  await atomicWrite(manifestPath(path), JSON.stringify(owned));
+  await atomicWrite(manifestPath(path), JSON.stringify([...previousOwned, ...owned]));
   await atomicWrite(path, JSON.stringify({ ...config, hooks }, null, 2) + '\n');
+  await atomicWrite(manifestPath(path), JSON.stringify(owned));
 }
 export async function uninstallClaudeHooks(path = settingsPath()) {
   const owned = await readOwned(path),
