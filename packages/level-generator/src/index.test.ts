@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, writeFile, rm, mkdir } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, mkdir, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -44,7 +44,16 @@ describe('committed metadata and playable generation', () => {
       );
       git('add', '.');
       git('commit', '-m', 'private message never collected');
+      const marker = join(path, '.git', 'fsmonitor-executed');
+      const monitor = join(path, '.git', 'monitor.cjs');
+      await writeFile(monitor, `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'executed');`);
+      git(
+        'config',
+        'core.fsmonitor',
+        `"${process.execPath.replace(/\\/g, '/')}" "${monitor.replace(/\\/g, '/')}"`,
+      );
       const first = await inspectRepository(path);
+      await expect(stat(marker)).rejects.toMatchObject({ code: 'ENOENT' });
       expect(first.publicAggregates.dependencyCount).toBe(1);
       await writeFile(join(path, 'src', 'PRIVATE_SENTINEL.ts'), 'DIRTY_PRIVATE_CONTENT');
       const second = await inspectRepository(path);
@@ -70,6 +79,8 @@ describe('committed metadata and playable generation', () => {
           true,
         );
       }
+      await writeFile(join(path, '.git', 'shallow'), first.snapshotId + '\n');
+      await expect(inspectRepository(path)).rejects.toThrow('full repository history');
     } finally {
       await rm(path, { recursive: true, force: true });
     }

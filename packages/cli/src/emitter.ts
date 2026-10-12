@@ -1,6 +1,7 @@
 import { readFile, stat, writeFile, open, unlink } from 'node:fs/promises';
 import { join, isAbsolute } from 'node:path';
 import { spawn } from 'node:child_process';
+import { request } from 'node:http';
 import { normalizeClaudeHook } from '../../agent-adapters/claude/index';
 import { discover, runtimeHome } from '../../local-bridge/src/runtime';
 import { readBounded } from '../../storage/src/atomic';
@@ -41,11 +42,16 @@ export async function emitHook(input: unknown, home = runtimeHome()): Promise<vo
     if (!event) return;
     try {
       const runtime = await discover(home);
-      await fetch(`http://127.0.0.1:${runtime.port}/hook`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(event),
-        signal: AbortSignal.timeout(150),
+      const payload = JSON.stringify(event);
+      await new Promise<void>((done, reject) => {
+        const timer = setTimeout(() => req.destroy(new Error('Bridge timeout')), 150);
+        const req = request({ hostname: '127.0.0.1', port: runtime.port, path: '/hook', method: 'POST',
+          headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } }, response => {
+            response.resume();
+            response.once('end', () => { clearTimeout(timer); response.statusCode === 200 ? done() : reject(new Error('Bridge rejected event')); });
+          });
+        req.once('error', error => { clearTimeout(timer); reject(error); });
+        req.end(payload);
       });
     } catch {
       await maybeLaunch(home, event);
