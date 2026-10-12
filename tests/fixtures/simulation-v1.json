@@ -1,0 +1,17 @@
+{
+  "physicsVersion": "clawdash-physics-1",
+  "description": "FNV-1a over every tick's stateHash ASCII bytes, plus airborne and terminal checks. These are executable simulation proofs, not human playtests.",
+  "airborneSamples": [
+    [312, "92acedf2"],
+    [313, "5479f5d5"],
+    [320, "44db33e3"],
+    [328, "a002a869"],
+    [336, "43646738"],
+    [345, "b6717691"]
+  ],
+  "levels": [
+    { "levelId": "first-light-v1", "ticks": 2160, "trajectory": "9904c7cf", "final": "59c30583" },
+    { "levelId": "overclock-v1", "ticks": 2640, "trajectory": "38a33ddc", "final": "e3182664" },
+    { "levelId": "night-shift-v1", "ticks": 3120, "trajectory": "e76ac4d9", "final": "1896838f" }
+  ]
+}
