@@ -2,12 +2,12 @@ import { chromium, expect } from '@playwright/test';
 import { spawn, execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
 
 if (process.platform !== 'win32') throw new Error('Native WebView smoke requires Windows');
 const home = await mkdtemp(join(tmpdir(), 'clawdash-desktop-'));
 const runtime = join(home, 'runtime');
-const exe = resolve('apps/desktop/src-tauri/target/release/clawdash.exe');
+const exe = resolve(process.env.CLAWDASH_NATIVE_EXE ?? 'apps/desktop/src-tauri/target/release/clawdash.exe');
 const settings = join(home, '.claude/settings.json');
 const original = {
   theme: 'fixture',
@@ -30,6 +30,7 @@ const fixtureEnv = {
 };
 try {
   app = spawn(exe, ['--agent-start'], {
+    cwd: home,
     windowsHide: true,
     stdio: 'ignore',
     env: fixtureEnv,
@@ -164,9 +165,10 @@ try {
     process.kill(beforeCold.pid);
   } catch {}
   await new Promise((resolve) => setTimeout(resolve, 300));
-  const cli = resolve('apps/desktop/src-tauri/target/release/clawdash-cli.exe');
+  const cli = join(dirname(exe), 'clawdash-cli.exe');
   const start = performance.now();
   execFileSync(cli, ['hook'], {
+    cwd: home,
     env: fixtureEnv,
     windowsHide: true,
     timeout: 2000,
@@ -216,6 +218,7 @@ try {
   await page.getByRole('button', { name: /Run your repo/ }).click();
   await expect(page.getByText('Agent working', { exact: true }).first()).toBeVisible({ timeout: 15000 });
   execFileSync(cli, ['hook'], {
+    cwd: home,
     env: fixtureEnv,
     windowsHide: true,
     timeout: 2000,
