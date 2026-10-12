@@ -42,12 +42,13 @@ export class Companion {
   matchesConnection(url: string, token: string): boolean {
     return this.base === new URL(url).origin && this.token === token;
   }
-  async rpc<T>(method: string, args: Record<string, unknown> = {}): Promise<T> {
+  async rpc<T>(method: string, args: Record<string, unknown> = {}, signal?: AbortSignal): Promise<T> {
+    const timeout = AbortSignal.timeout(15000);
     const response = await fetch(`${this.base}/rpc`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ v: 1, id: crypto.randomUUID(), method, ...args }),
-      signal: AbortSignal.timeout(15000),
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       cache: 'no-store',
     });
     if (!response.ok)
