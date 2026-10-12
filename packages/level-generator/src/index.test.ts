@@ -60,6 +60,8 @@ describe('committed metadata and playable generation', () => {
       expect(second.publicAggregates.dirty).toBe(true);
       expect(second.fingerprint).toBe(first.fingerprint);
       const level = generateRepoLevel(first);
+      expect(level.generatorVersion).toBe('repo-v2');
+      expect(level.levelId).toMatch(/^repo-v2-[a-f0-9]{20}$/);
       expect(generateRepoLevel(second)).toEqual(level);
       expect(verifyLevel(level).valid).toBe(true);
       const exported = exportChallenge(level);

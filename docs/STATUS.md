@@ -37,4 +37,6 @@ The Windows Computer Use helper could not initialize in this session. Native ver
 
 ## Feature PRs
 
-Workspace #1; simulation/content #2; repository generation #3; companion/hooks #4; offline Arcade product #5; runtime hardening #6; Windows release configuration follows. Each accepted feature is merged independently.
+Workspace #1; simulation/content #2; repository generation #3; companion/hooks #4; offline Arcade product #5; runtime hardening #6; Windows release configuration #7. Each accepted feature is merged independently.
+
+The final generator is `repo-v2`: derived level IDs bind generator, segment catalog, physics and difficulty versions. Previously baked `repo-v1` snapshots remain unchanged/playable under compatible physics; their progress is not reassigned to newly generated content. Partial clones and missing required manifests are rejected rather than allowing locally available objects to alter the seed.

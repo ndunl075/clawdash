@@ -9,8 +9,9 @@ import {
   SEGMENT_CATALOG_VERSION,
 } from '../../level-content/src/index';
 import type { LevelSpec } from '../../level-schema/src/index';
+import { PHYSICS_VERSION } from '../../game/src/simulation/index';
 
-export const GENERATOR_VERSION = 'repo-v1';
+export const GENERATOR_VERSION = 'repo-v2';
 export const CATALOG_VERSION = SEGMENT_CATALOG_VERSION;
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_FILES = 20000;
@@ -263,8 +264,10 @@ export function generateRepoLevel(descriptor: RepoDescriptor, difficulty?: 1 | 2
     difficulty ?? (Math.min(3, 1 + Math.floor(descriptor.publicAggregates.maxDepth / 4)) as 1 | 2 | 3);
   const themes = ['aurora', 'ember', 'violet'];
   const options = {
-    levelId: `repo-${createHash('sha256')
-      .update(descriptor.fingerprint + ':' + tier)
+    levelId: `repo-v2-${createHash('sha256')
+      .update(
+        canonicalJson([descriptor.fingerprint, tier, GENERATOR_VERSION, CATALOG_VERSION, PHYSICS_VERSION]),
+      )
       .digest('hex')
       .slice(0, 20)}`,
     displayName: 'Commit Circuit',
