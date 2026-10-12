@@ -204,9 +204,12 @@ try {
   if (!page) throw new Error('Cold auto-open did not restore the native game');
   const connection = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('bridge_connection'));
   if (connection.url !== `http://127.0.0.1:${cold.port}`) throw new Error('Unexpected native test profile');
-  coldHostPid = await page.evaluate(
-    async () => (await window.__TAURI_INTERNALS__.invoke('get_desktop_preferences')).processId,
+  const coldPreferences = await page.evaluate(() =>
+    window.__TAURI_INTERNALS__.invoke('get_desktop_preferences'),
   );
+  coldHostPid = coldPreferences.processId;
+  if (!coldPreferences.visible || coldPreferences.focused)
+    throw new Error('Cold auto-open must be visible without taking focus');
   if (!Number.isSafeInteger(coldHostPid) || coldHostPid <= 0)
     throw new Error('Native cold-launch PID unavailable');
   await expect(page.locator('.app')).toHaveClass(/theme-glacier/);

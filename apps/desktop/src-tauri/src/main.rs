@@ -127,6 +127,13 @@ fn reveal(window: &tauri::WebviewWindow, focus: bool) -> Result<(), String> {
                 handle.0,
                 windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNOACTIVATE,
             );
+            // The first ShowWindow can honor launcher STARTUPINFO instead of the requested flag.
+            if windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible(handle.0) == 0 {
+                windows_sys::Win32::UI::WindowsAndMessaging::ShowWindow(
+                    handle.0,
+                    windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNOACTIVATE,
+                );
+            }
         }
         return Ok(());
     }
@@ -219,7 +226,7 @@ fn get_desktop_preferences(window: tauri::WebviewWindow) -> serde_json::Value {
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .unwrap_or_default();
     let policy = window_policy();
-    serde_json::json!({"autoOpen":launcher["autoOpen"].as_bool().unwrap_or(false),"focus":launcher["focus"].as_bool().unwrap_or(false),"alwaysOnTop":policy["alwaysOnTop"].as_bool().unwrap_or(false),"closeToTray":policy["closeToTray"].as_bool().unwrap_or(false),"fullscreen":window.is_fullscreen().unwrap_or(false),"processId":std::process::id()})
+    serde_json::json!({"autoOpen":launcher["autoOpen"].as_bool().unwrap_or(false),"focus":launcher["focus"].as_bool().unwrap_or(false),"alwaysOnTop":policy["alwaysOnTop"].as_bool().unwrap_or(false),"closeToTray":policy["closeToTray"].as_bool().unwrap_or(false),"fullscreen":window.is_fullscreen().unwrap_or(false),"processId":std::process::id(),"visible":window.is_visible().unwrap_or(false),"focused":window.is_focused().unwrap_or(false)})
 }
 #[tauri::command]
 async fn load_save(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
