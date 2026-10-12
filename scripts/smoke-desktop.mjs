@@ -229,12 +229,40 @@ try {
     env: fixtureEnv,
     windowsHide: true,
     timeout: 2000,
+    input: JSON.stringify({
+      hook_event_name: 'Notification',
+      notification_type: 'permission_prompt',
+      session_id: 'cold-launch-fixture',
+      message: 'PRIVATE_ATTENTION_MESSAGE',
+    }),
+  });
+  await expect(page.getByText('Needs your attention', { exact: true }).first()).toBeVisible({
+    timeout: 15000,
+  });
+  execFileSync(cli, ['hook'], {
+    cwd: home,
+    env: fixtureEnv,
+    windowsHide: true,
+    timeout: 2000,
+    input: JSON.stringify({
+      hook_event_name: 'PostToolUse',
+      tool_name: 'Read',
+      session_id: 'cold-launch-fixture',
+      tool_input: { file_path: 'PRIVATE_TOOL_PATH' },
+    }),
+  });
+  await expect(page.getByText('Agent working', { exact: true }).first()).toBeVisible({ timeout: 15000 });
+  execFileSync(cli, ['hook'], {
+    cwd: home,
+    env: fixtureEnv,
+    windowsHide: true,
+    timeout: 2000,
     input: JSON.stringify({ hook_event_name: 'Stop', session_id: 'cold-launch-fixture' }),
   });
   await expect(page.getByText('Turn ended', { exact: true }).first()).toBeVisible({ timeout: 15000 });
   if (errors.length) throw new Error(errors.join('\n'));
   console.log(
-    `Native WebView: Arcade, saves, compact/fullscreen, crash recovery, hook consent and cold auto-open/turn-ended pass without Node on PATH; cold emitter returned in ${emitterMs.toFixed(1)}ms.`,
+    `Native WebView: Arcade, saves, compact/fullscreen, crash recovery, hook consent and cold auto-open/attention/resume/turn-ended pass without Node on PATH; cold emitter returned in ${emitterMs.toFixed(1)}ms.`,
   );
 } catch (error) {
   try {

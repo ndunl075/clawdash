@@ -769,6 +769,24 @@ function CompanionPage({
   const [generated, setGenerated] = useState<LevelSpec>();
   const [summary, setSummary] = useState('');
   const [difficulty, setDifficulty] = useState('2');
+  const [generationStage, setGenerationStage] = useState<'inspecting' | 'generating' | null>(null);
+  const generationRequest = useRef<AbortController | undefined>(undefined);
+  useEffect(() => {
+    setGenerationStage(null);
+    return () => {
+      generationRequest.current?.abort();
+      generationRequest.current = undefined;
+    };
+  }, [companion]);
+  const cancelGeneration = (notify = false) => {
+    const request = generationRequest.current;
+    if (!request) return;
+    generationRequest.current = undefined;
+    request?.abort();
+    setGenerationStage(null);
+    setSummary('');
+    if (notify) onNotice('Generation request cancelled. The companion may still finish its current work.');
+  };
   return (
     <section className="page companion-page">
       <div className="eyebrow">THE LOCAL CONNECTION</div>
@@ -835,7 +853,13 @@ function CompanionPage({
                 <i />
                 {connected ? 'Connected locally' : 'Connection lost / unknown'}
               </p>
-              <button className="text-button" onClick={() => onConnect(undefined)}>
+              <button
+                className="text-button"
+                onClick={() => {
+                  cancelGeneration();
+                  onConnect(undefined);
+                }}
+              >
                 Disconnect
               </button>
             </div>
@@ -850,29 +874,44 @@ function CompanionPage({
           <form
             onSubmit={async (e) => {
               e.preventDefault();
-              if (!companion) return;
-              setBusy(true);
+              if (!companion || generationRequest.current) return;
+              const request = new AbortController();
+              generationRequest.current = request;
+              const isCurrent = () => generationRequest.current === request && !request.signal.aborted;
+              setGenerationStage('inspecting');
               setGenerated(undefined);
+              setSummary('');
+              onNotice('');
               try {
                 const data = await companion.rpc<{
                   fileCount: number;
                   commitCount: number;
                   snapshot: string;
-                }>('inspectRepo', { folderGrantId: grant });
+                }>('inspectRepo', { folderGrantId: grant }, request.signal);
+                if (!isCurrent()) return;
                 setSummary(
                   `${data.fileCount} tracked files · ${data.commitCount} commits · Based on last commit`,
                 );
-                const l = await companion.rpc<unknown>('generateRepoLevel', {
-                  folderGrantId: grant,
-                  difficulty: Number(difficulty),
-                });
+                setGenerationStage('generating');
+                const l = await companion.rpc<unknown>(
+                  'generateRepoLevel',
+                  {
+                    folderGrantId: grant,
+                    difficulty: Number(difficulty),
+                  },
+                  request.signal,
+                );
+                if (!isCurrent()) return;
                 const generatedLevel = prepareRepoLevel(l);
                 onGenerated(generatedLevel);
                 setGenerated(generatedLevel);
               } catch (e) {
-                onNotice(e instanceof Error ? e.message : 'Generation failed');
+                if (isCurrent()) onNotice(e instanceof Error ? e.message : 'Generation failed');
               } finally {
-                setBusy(false);
+                if (isCurrent()) {
+                  generationRequest.current = undefined;
+                  setGenerationStage(null);
+                }
               }
             }}
           >
@@ -881,6 +920,7 @@ function CompanionPage({
                 <button
                   type="button"
                   className="secondary"
+                  disabled={generationStage !== null}
                   onClick={async () => {
                     try {
                       const id = await native<string | null>('choose_repository');
@@ -900,12 +940,16 @@ function CompanionPage({
                 value={grant}
                 onChange={(e) => setGrant(e.target.value)}
                 required
-                disabled={!companion}
+                disabled={!companion || generationStage !== null}
               />
             </label>
             <label className="field">
               Difficulty
-              <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)}>
+              <select
+                value={difficulty}
+                onChange={(e) => setDifficulty(e.target.value)}
+                disabled={generationStage !== null}
+              >
                 {[1, 2, 3, 4, 5].map((n) => (
                   <option key={n} value={n}>
                     {n} / 5
@@ -913,9 +957,20 @@ function CompanionPage({
                 ))}
               </select>
             </label>
-            <button className="secondary" disabled={!companion || busy}>
-              {busy ? 'Building & verifying…' : 'Generate track →'}
-            </button>
+            <div className="button-row">
+              <button className="secondary" disabled={!companion || busy || generationStage !== null}>
+                {generationStage === 'inspecting'
+                  ? 'Inspecting metadata…'
+                  : generationStage === 'generating'
+                    ? 'Building & verifying…'
+                    : 'Generate track →'}
+              </button>
+              {generationStage !== null && (
+                <button type="button" className="text-button" onClick={() => cancelGeneration(true)}>
+                  Cancel generation
+                </button>
+              )}
+            </div>
           </form>
           {generated && (
             <div className="generated">
