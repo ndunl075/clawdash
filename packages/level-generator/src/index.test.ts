@@ -11,7 +11,7 @@ import {
   exportChallenge,
   fingerprintDescriptor,
 } from './index';
-import { verifyLevel } from '../../level-content/src/index';
+import { verifyLevel, certifiedPatterns } from '../../level-content/src/index';
 
 describe('canonical data and PRNG', () => {
   it('sorts keys, normalizes Unicode/newlines and rejects floats', () => {
@@ -62,6 +62,12 @@ describe('committed metadata and playable generation', () => {
       const level = generateRepoLevel(first);
       expect(level.generatorVersion).toBe('repo-v2');
       expect(level.levelId).toMatch(/^repo-v2-[a-f0-9]{20}$/);
+      const expert = generateRepoLevel(first, 5);
+      expect(
+        expert.chunks.every(
+          (chunk) => certifiedPatterns.find((pattern) => pattern.id === chunk.patternId)!.difficultyCost >= 3,
+        ),
+      ).toBe(true);
       expect(generateRepoLevel(second)).toEqual(level);
       expect(verifyLevel(level).valid).toBe(true);
       const exported = exportChallenge(level);

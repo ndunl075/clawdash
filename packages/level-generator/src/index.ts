@@ -277,13 +277,10 @@ export function generateRepoLevel(descriptor: RepoDescriptor, difficulty?: 1 | 2
     generatorVersion: GENERATOR_VERSION,
     segmentCatalogVersion: CATALOG_VERSION,
   };
-  const catalog = certifiedPatterns as readonly {
-    id: string;
-    difficulty?: number;
-    difficultyCost?: number;
-    difficultyTier?: number;
-  }[];
-  const eligible = catalog.filter((p) => (p.difficultyTier ?? p.difficultyCost ?? p.difficulty ?? 1) <= tier);
+  // Expert keeps the densest certified pool instead of duplicating tier four's geometry.
+  const eligible = certifiedPatterns.filter(
+    (p) => p.difficultyCost <= tier && (tier < 5 || p.difficultyCost >= 3),
+  );
   if (!eligible.length) throw new Error('No certified patterns available');
   for (let attempt = 0; attempt < 4; attempt++) {
     const ids = Array.from({ length: count }, () => eligible[Math.floor(random() * eligible.length)].id);
