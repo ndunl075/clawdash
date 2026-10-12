@@ -115,6 +115,21 @@ fn set_always_on_top(window: tauri::WebviewWindow, enabled: bool) -> Result<(), 
 }
 #[tauri::command]
 fn show_game(window: tauri::WebviewWindow, focus: bool) -> Result<(), String> {
+    reveal(&window, focus)
+}
+fn reveal(window: &tauri::WebviewWindow, focus: bool) -> Result<(), String> {
+    #[cfg(windows)]
+    if !focus {
+        let handle = window.hwnd().map_err(|e| e.to_string())?;
+        // ShowWindow(SW_SHOW) activates even without SetFocus. Explicitly preserve the foreground app.
+        unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::ShowWindow(
+                handle.0,
+                windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNOACTIVATE,
+            );
+        }
+        return Ok(());
+    }
     window.show().map_err(|e| e.to_string())?;
     if focus {
         window.set_focus().map_err(|e| e.to_string())?;
@@ -260,12 +275,9 @@ fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                if !args.iter().any(|a| a == "--agent-start")
-                    || args.iter().any(|a| a == "--focus-game")
-                {
-                    let _ = window.set_focus();
-                }
+                let focus = !args.iter().any(|a| a == "--agent-start")
+                    || args.iter().any(|a| a == "--focus-game");
+                let _ = reveal(&window, focus);
             }
         }))
         .plugin(tauri_plugin_window_state::Builder::default().build())
@@ -295,11 +307,9 @@ fn main() {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_always_on_top(policy["alwaysOnTop"].as_bool().unwrap_or(false));
                 let args: Vec<String> = std::env::args().collect();
-                if !args.iter().any(|a| a == "--agent-start")
-                    || args.iter().any(|a| a == "--focus-game")
-                {
-                    let _ = window.set_focus();
-                }
+                let focus = !args.iter().any(|a| a == "--agent-start")
+                    || args.iter().any(|a| a == "--focus-game");
+                let _ = reveal(&window, focus);
             }
             use tauri::{
                 menu::{Menu, MenuItem},
