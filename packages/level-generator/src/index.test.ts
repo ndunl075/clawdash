@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, writeFile, rm, mkdir, stat } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, mkdir, stat, copyFile, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -10,8 +10,9 @@ import {
   generateRepoLevel,
   exportChallenge,
   fingerprintDescriptor,
+  resolveGitExecutable,
 } from './index';
-import { verifyLevel } from '../../level-content/src/index';
+import { verifyLevel, certifiedPatterns } from '../../level-content/src/index';
 
 describe('canonical data and PRNG', () => {
   it('sorts keys, normalizes Unicode/newlines and rejects floats', () => {
@@ -28,12 +29,17 @@ describe('canonical data and PRNG', () => {
 describe('committed metadata and playable generation', () => {
   it('ignores dirty contents, bounds summaries, never leaks sentinel paths into challenges', async () => {
     const path = await mkdtemp(join(tmpdir(), 'clawdash-git-'));
+    const trustedGit = await resolveGitExecutable();
     const git = (...args: string[]) =>
-      execFileSync('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', ...args], {
-        cwd: path,
-        windowsHide: true,
-        stdio: 'pipe',
-      });
+      execFileSync(
+        trustedGit,
+        ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', ...args],
+        {
+          cwd: path,
+          windowsHide: true,
+          stdio: 'pipe',
+        },
+      );
     try {
       git('init');
       await mkdir(join(path, 'src'));
@@ -44,6 +50,11 @@ describe('committed metadata and playable generation', () => {
       );
       git('add', '.');
       git('commit', '-m', 'private message never collected');
+      if (process.platform === 'win32') await copyFile(process.execPath, join(path, 'git.exe'));
+      else {
+        await writeFile(join(path, 'git'), '#!/bin/sh\nexit 99\n');
+        await chmod(join(path, 'git'), 0o755);
+      }
       const marker = join(path, '.git', 'fsmonitor-executed');
       const monitor = join(path, '.git', 'monitor.cjs');
       await writeFile(monitor, `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'executed');`);
@@ -60,6 +71,14 @@ describe('committed metadata and playable generation', () => {
       expect(second.publicAggregates.dirty).toBe(true);
       expect(second.fingerprint).toBe(first.fingerprint);
       const level = generateRepoLevel(first);
+      expect(level.generatorVersion).toBe('repo-v2');
+      expect(level.levelId).toMatch(/^repo-v2-[a-f0-9]{20}$/);
+      const expert = generateRepoLevel(first, 5);
+      expect(
+        expert.chunks.every(
+          (chunk) => certifiedPatterns.find((pattern) => pattern.id === chunk.patternId)!.difficultyCost >= 3,
+        ),
+      ).toBe(true);
       expect(generateRepoLevel(second)).toEqual(level);
       expect(verifyLevel(level).valid).toBe(true);
       const exported = exportChallenge(level);
@@ -79,6 +98,25 @@ describe('committed metadata and playable generation', () => {
           true,
         );
       }
+      const remoteMarker = join(path, '.git', 'remote-executed');
+      const remoteHelper = join(path, '.git', 'remote-helper.cjs');
+      await writeFile(
+        remoteHelper,
+        `require('node:fs').writeFileSync(${JSON.stringify(remoteMarker)}, 'executed'); process.exit(1);`,
+      );
+      git(
+        'config',
+        'core.sshCommand',
+        `"${process.execPath.replace(/\\/g, '/')}" "${remoteHelper.replace(/\\/g, '/')}"`,
+      );
+      git('config', 'remote.origin.url', 'ssh://fixture.invalid/private');
+      git('config', 'remote.origin.promisor', 'true');
+      const manifestObject = first.entries.find((entry) => entry.path === 'package.json')!.object;
+      await rm(join(path, '.git', 'objects', manifestObject.slice(0, 2), manifestObject.slice(2)));
+      await expect(inspectRepository(path)).rejects.toThrow('complete local clone');
+      git('config', '--unset', 'remote.origin.promisor');
+      await expect(inspectRepository(path)).rejects.toThrow('Cannot inspect');
+      await expect(stat(remoteMarker)).rejects.toMatchObject({ code: 'ENOENT' });
       await writeFile(join(path, '.git', 'shallow'), first.snapshotId + '\n');
       await expect(inspectRepository(path)).rejects.toThrow('full repository history');
     } finally {

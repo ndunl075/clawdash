@@ -45,12 +45,30 @@ export async function emitHook(input: unknown, home = runtimeHome()): Promise<vo
       const payload = JSON.stringify(event);
       await new Promise<void>((done, reject) => {
         const timer = setTimeout(() => req.destroy(new Error('Bridge timeout')), 150);
-        const req = request({ hostname: '127.0.0.1', port: runtime.port, path: '/hook', method: 'POST',
-          headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } }, response => {
+        const req = request(
+          {
+            hostname: '127.0.0.1',
+            port: runtime.port,
+            path: '/hook',
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${secret}`,
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(payload),
+            },
+          },
+          (response) => {
             response.resume();
-            response.once('end', () => { clearTimeout(timer); response.statusCode === 200 ? done() : reject(new Error('Bridge rejected event')); });
-          });
-        req.once('error', error => { clearTimeout(timer); reject(error); });
+            response.once('end', () => {
+              clearTimeout(timer);
+              response.statusCode === 200 ? done() : reject(new Error('Bridge rejected event'));
+            });
+          },
+        );
+        req.once('error', (error) => {
+          clearTimeout(timer);
+          reject(error);
+        });
         req.end(payload);
       });
     } catch {

@@ -140,7 +140,18 @@ export function App() {
         }
         previous = new Map(list.map((s) => [s.sessionId, s.state]));
       } catch {
-        if (live) setConnected(false);
+        if (live) {
+          setConnected(false);
+          if (isDesktop()) {
+            try {
+              const c = await native<{ url: string; token: string }>('bridge_connection');
+              if (live && !companion.matchesConnection(c.url, c.token))
+                setCompanion(new Companion(c.url, c.token));
+            } catch {
+              /* The supervisor may still be restarting; gameplay continues. */
+            }
+          }
+        }
       }
     };
     void poll();
@@ -208,6 +219,10 @@ export function App() {
   };
   const fullscreen = async () => {
     try {
+      if (isDesktop()) {
+        await native('toggle_fullscreen');
+        return;
+      }
       if (document.fullscreenElement) await document.exitFullscreen();
       else await document.documentElement.requestFullscreen();
     } catch {
@@ -941,7 +956,7 @@ function CompanionPage({
           <h3>Agent signal</h3>
           <p className="muted">
             Opt in from your companion with <code>clawdash integrations install claude</code>. It previews the
-            local settings change and asks for consent. Remove it with{' '}
+            local settings change. Running the install command opts in. Remove it with{' '}
             <code>clawdash integrations uninstall claude</code>.
           </p>
           <p className="muted">
