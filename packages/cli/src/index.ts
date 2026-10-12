@@ -1,6 +1,7 @@
 import { join, resolve } from 'node:path';
 import { isSea } from 'node:sea';
 import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { startBridge, grantFolder } from '../../local-bridge/src/index';
@@ -8,12 +9,23 @@ import { ensureRuntime, runtimeHome, discover } from '../../local-bridge/src/run
 import { atomicWrite, readBounded } from '../../storage/src/atomic';
 import { installClaudeHooks, uninstallClaudeHooks, settingsPath } from './hooks';
 import { emitHook, readHookStdin, maybeLaunch } from './emitter';
+import { gameSaveStore, readGameSaveInput } from '../../storage/src/game-save';
 
 export async function main(args = process.argv.slice(isSea() ? 1 : 2)) {
   const [command, ...rest] = args,
     home = runtimeHome();
   if (command === 'hook') {
     await emitHook(await readHookStdin(), home);
+    return;
+  }
+  if (command === 'storage-load' || command === 'storage-save') {
+    await ensureRuntime(home);
+    const store = gameSaveStore(join(home, 'game-save.json'));
+    if (command === 'storage-load') console.log(JSON.stringify(await store.load()));
+    else {
+      const save = await readGameSaveInput(process.stdin);
+      console.log(JSON.stringify(await store.update(() => save)));
+    }
     return;
   }
   if (command === 'bridge') {
@@ -89,7 +101,7 @@ export async function main(args = process.argv.slice(isSea() ? 1 : 2)) {
                 command: process.execPath,
                 args: [
                   '--import',
-                  createRequire(resolve('package.json')).resolve('tsx'),
+                  pathToFileURL(createRequire(resolve('package.json')).resolve('tsx')).href,
                   resolve(process.argv[1]),
                 ],
               };
@@ -130,7 +142,7 @@ export async function main(args = process.argv.slice(isSea() ? 1 : 2)) {
     return;
   }
   console.log(
-    'clawdash bridge [--static PATH] | grant PATH | pair [--revoke] | integrations install|uninstall claude [--executable EXE] | configure-launcher EXE [--auto-open] [--focus] | diagnostics',
+    'clawdash bridge [--static PATH] | grant PATH | pair [--revoke] | integrations install|uninstall claude [--executable EXE] | configure-launcher EXE [--auto-open] [--focus] | storage-load | storage-save | diagnostics',
   );
 }
 // Bundlers define this constant for SEA entrypoints. Importing main in tests stays inert.

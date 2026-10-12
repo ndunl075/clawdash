@@ -6,8 +6,44 @@ import { startBridge, grantFolder } from '../../packages/local-bridge/src/index'
 import { normalizeClaudeHook } from '../../packages/agent-adapters/claude/index';
 import { emitHook } from '../../packages/cli/src/emitter';
 import { atomicWrite } from '../../packages/storage/src/atomic';
+import { ensureRuntime } from '../../packages/local-bridge/src/runtime';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
 describe('Authenticated loopback bridge', () => {
+  it('replaces pre-existing broad Windows directory and secret ACL entries', async () => {
+    if (process.platform !== 'win32') return;
+    const home = await mkdtemp(join(tmpdir(), 'clawdash-runtime-acl-'));
+    try {
+      await writeFile(join(home, 'emitter-secret'), 'a'.repeat(64));
+      await promisify(execFile)('icacls.exe', [home, '/grant', '*S-1-1-0:(OI)(CI)R'], { windowsHide: true });
+      await promisify(execFile)('icacls.exe', [join(home, 'emitter-secret'), '/grant', '*S-1-1-0:R'], {
+        windowsHide: true,
+      });
+      await ensureRuntime(home);
+      const script =
+        "$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; foreach($path in @($env:CLAWDASH_ACL_TARGET,[System.IO.Path]::Combine($env:CLAWDASH_ACL_TARGET,'emitter-secret'))) { $item=if([System.IO.Directory]::Exists($path)){[System.IO.DirectoryInfo]::new($path)}else{[System.IO.FileInfo]::new($path)}; foreach($rule in $item.GetAccessControl().GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier])) { if($rule.IdentityReference.Value -ne $sid) { throw 'Unexpected ACL identity' } }; [Console]::WriteLine('owner-only') }";
+      const result = await promisify(execFile)(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-Command', script],
+        { windowsHide: true, timeout: 10_000, env: { ...process.env, CLAWDASH_ACL_TARGET: home } },
+      );
+      expect(result.stdout.match(/owner-only/g)).toHaveLength(2);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+  it('creates stable secrets across concurrent first launches', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'clawdash-runtime-race-'));
+    try {
+      const results = await Promise.all(Array.from({ length: 20 }, () => ensureRuntime(home)));
+      expect(new Set(results.map((r) => r.emitterToken)).size).toBe(1);
+      expect(new Set(results.map((r) => r.pairingToken)).size).toBe(1);
+      expect(await ensureRuntime(home)).toEqual(results[0]);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
   it('enforces authentication, origins, quotas, age, schemas and folder grants', async () => {
     const home = await mkdtemp(join(tmpdir(), 'clawdash-bridge-'));
     const bridge = await startBridge({
