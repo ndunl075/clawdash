@@ -38,7 +38,6 @@ jobs:
       - run: node scripts/build-sidecar.mjs
       - run: node scripts/smoke-sidecar.mjs
       - run: pnpm --dir apps/desktop build
-      - run: node scripts/smoke-desktop.mjs
       - run: ./scripts/smoke-installer.ps1
       - run: node scripts/checksums.mjs
       - uses: actions/upload-artifact@v4

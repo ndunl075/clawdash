@@ -23,7 +23,8 @@ const fixtureEnv = {
   CLAWDASH_HOME: runtime,
   USERPROFILE: home,
   HOME: home,
-  LOCALAPPDATA: join(home, 'AppData/Local'),
+  // Preserve OS runtime discovery; isolate browser data through its documented override.
+  WEBVIEW2_USER_DATA_FOLDER: join(home, 'webview-profile'),
   PATH: systemPath,
   WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=47932',
   CLAWDASH_DIAGNOSTICS: '1',
@@ -32,8 +33,12 @@ try {
   app = spawn(exe, ['--agent-start'], {
     cwd: home,
     windowsHide: true,
-    stdio: 'ignore',
+    stdio: ['ignore', 'ignore', 'pipe'],
     env: fixtureEnv,
+  });
+  let startupError = '';
+  app.stderr.on('data', (chunk) => {
+    startupError += chunk.toString();
   });
   for (let attempt = 0; attempt < 100 && !browser; attempt++) {
     if (app.exitCode !== null) throw new Error('Native app exited before WebView startup');
@@ -43,7 +48,7 @@ try {
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
   }
-  if (!browser) throw new Error('Native WebView did not start');
+  if (!browser) throw new Error(`Native WebView did not start: ${startupError}`);
   let page;
   for (let attempt = 0; attempt < 50 && !page; attempt++) {
     page = browser
@@ -252,5 +257,5 @@ try {
     process.kill(discovery.pid);
   } catch {}
   await new Promise((resolve) => setTimeout(resolve, 300));
-  await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+  await rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
 }
