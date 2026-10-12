@@ -1,7 +1,8 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { realpath } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { realpath, stat, access } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { resolve, join, delimiter, isAbsolute } from 'node:path';
 import {
   compilePatterns,
   certifiedPatterns,
@@ -96,12 +97,31 @@ export function seededRandom(seed: string): () => number {
   };
 }
 
-function gitBounded(
+let trustedGit: string | undefined;
+export async function resolveGitExecutable(): Promise<string> {
+  if (trustedGit) return trustedGit;
+  // Search only absolute PATH entries, never a repository's working directory.
+  for (const directory of (process.env.PATH ?? '').split(delimiter).slice(0, 128)) {
+    if (!isAbsolute(directory) || (process.platform === 'win32' && directory.startsWith('\\\\'))) continue;
+    const candidate = join(directory, process.platform === 'win32' ? 'git.exe' : 'git');
+    try {
+      if (!(await stat(candidate)).isFile()) continue;
+      await access(candidate, constants.X_OK);
+      trustedGit = await realpath(candidate);
+      return trustedGit;
+    } catch {
+      /* Continue through the trusted process PATH. */
+    }
+  }
+  throw new Error('Git is unavailable. Install Git and restart the companion.');
+}
+async function gitBounded(
   cwd: string,
   args: string[],
   maxBuffer = MAX_BYTES,
   deadline = Date.now() + 6000,
 ): Promise<Buffer> {
+  const executable = await resolveGitExecutable();
   return new Promise((resolveOutput, reject) => {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
@@ -109,10 +129,10 @@ function gitBounded(
       return;
     }
     const environment = Object.fromEntries(
-      Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')),
+      Object.entries(process.env).filter(([key]) => !key.toUpperCase().startsWith('GIT_')),
     );
     execFile(
-      'git',
+      executable,
       ['--no-optional-locks', '-c', 'core.quotepath=false', '-c', 'core.fsmonitor=false', ...args],
       {
         cwd,

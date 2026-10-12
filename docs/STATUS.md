@@ -19,7 +19,7 @@ Reviewed 2026-10-12. The implementation is a Windows release candidate; the clea
 ## Automated verification
 
 - Strict TypeScript, production web build, formatting and JavaScript license audit pass.
-- 66 unit/integration tests pass, including real HTTP → Git metadata → certified level → lifecycle events, temporary installer configuration, native storage queue/recovery, secret concurrency and ACL replacement.
+- 68 unit/integration tests pass, including real HTTP → Git metadata → certified level → lifecycle events, temporary installer configuration, native storage queue/recovery, secret concurrency and ACL replacement, and malformed client-session rejection.
 - Nine Chromium scenarios pass, including offline reload/play, compact checkpoints, partial progress, cached repo replay, unavailable companion, delayed desktop pairing, unknown-save preservation and complete Node/browser simulation hash parity for all three curated tracks.
 - `pnpm audit` reports no known vulnerabilities after updating Vite/Vitest and aligning Tauri CLI/runtime.
 - `scripts/smoke-sidecar.mjs`: real standalone bridge/emitter/storage/owned-hook install and uninstall pass with Node excluded from PATH. Measured emitter p95: **73.4 ms** (20-process local Windows sample).

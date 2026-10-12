@@ -1,3 +1,18 @@
+import { z } from 'zod';
+const sessionsSchema = z
+  .array(
+    z.object({
+      sessionId: z.string().min(1).max(128),
+      provider: z.string().min(1).max(32),
+      state: z.enum(['idle', 'working', 'attention', 'turn_ended', 'error', 'ended']),
+      lastSeenAt: z.iso.datetime(),
+      toolActivityCount: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+      category: z.string().max(32).optional(),
+      connection: z.enum(['live', 'unknown']).optional(),
+      verification: z.literal('unknown').optional(),
+    }),
+  )
+  .max(64);
 export type Session = {
   sessionId: string;
   provider: string;
@@ -66,7 +81,10 @@ export class Companion {
       cache: 'no-store',
     });
     if (!response.ok) throw new Error('Connection lost');
-    const data = (await response.json()) as { sessions: Session[] };
-    return Array.isArray(data.sessions) ? data.sessions : [];
+    const data: unknown = await response.json();
+    if (!data || typeof data !== 'object') throw new Error('Invalid companion status');
+    const parsed = sessionsSchema.safeParse((data as { sessions?: unknown }).sessions);
+    if (!parsed.success) throw new Error('Invalid companion status');
+    return parsed.data;
   }
 }
