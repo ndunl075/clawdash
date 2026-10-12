@@ -79,6 +79,25 @@ describe('committed metadata and playable generation', () => {
           true,
         );
       }
+      const remoteMarker = join(path, '.git', 'remote-executed');
+      const remoteHelper = join(path, '.git', 'remote-helper.cjs');
+      await writeFile(
+        remoteHelper,
+        `require('node:fs').writeFileSync(${JSON.stringify(remoteMarker)}, 'executed'); process.exit(1);`,
+      );
+      git(
+        'config',
+        'core.sshCommand',
+        `"${process.execPath.replace(/\\/g, '/')}" "${remoteHelper.replace(/\\/g, '/')}"`,
+      );
+      git('config', 'remote.origin.url', 'ssh://fixture.invalid/private');
+      git('config', 'remote.origin.promisor', 'true');
+      const manifestObject = first.entries.find((entry) => entry.path === 'package.json')!.object;
+      await rm(join(path, '.git', 'objects', manifestObject.slice(0, 2), manifestObject.slice(2)));
+      await expect(inspectRepository(path)).rejects.toThrow('complete local clone');
+      git('config', '--unset', 'remote.origin.promisor');
+      await expect(inspectRepository(path)).rejects.toThrow('Cannot inspect');
+      await expect(stat(remoteMarker)).rejects.toMatchObject({ code: 'ENOENT' });
       await writeFile(join(path, '.git', 'shallow'), first.snapshotId + '\n');
       await expect(inspectRepository(path)).rejects.toThrow('full repository history');
     } finally {

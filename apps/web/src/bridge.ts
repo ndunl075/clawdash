@@ -24,6 +24,9 @@ export class Companion {
       throw new Error('Use the local companion address: http://127.0.0.1:PORT');
     this.base = url.origin;
   }
+  matchesConnection(url: string, token: string): boolean {
+    return this.base === new URL(url).origin && this.token === token;
+  }
   async rpc<T>(method: string, args: Record<string, unknown> = {}): Promise<T> {
     const response = await fetch(`${this.base}/rpc`, {
       method: 'POST',
@@ -36,10 +39,24 @@ export class Companion {
       throw new Error(
         response.status === 401
           ? 'Pairing token rejected. Create a new token with the companion.'
-          : 'Companion unavailable. Open its local game address and try again.',
+          : response.status === 400
+            ? 'Request rejected. Choose an approved folder grant ID and a supported difficulty.'
+            : 'Companion unavailable. Open its local game address and try again.',
       );
     const body = (await response.json()) as { ok: boolean; data: T; error?: string };
-    if (!body.ok) throw new Error(`Companion: ${body.error ?? 'request failed'}`);
+    if (!body.ok) {
+      const messages: Record<string, string> = {
+        internal:
+          'Repository inspection failed. Check Git is installed, select the repository root, make an initial commit, use a complete local clone with full history, and keep below 20,000 tracked entries.',
+        not_found: 'That folder grant is unavailable. Choose the repository folder again.',
+        busy: 'The companion is already inspecting a repository. Try again shortly.',
+        unsupported:
+          'This companion does not support repository generation. Update the companion and try again.',
+        invalid: 'Use an approved folder grant ID and a supported difficulty.',
+        unauthorized: 'Pairing is required. Open the companion’s local game address and pair again.',
+      };
+      throw new Error(messages[body.error ?? ''] ?? 'The local request failed. Check companion diagnostics.');
+    }
     return body.data;
   }
   async sessions(): Promise<Session[]> {

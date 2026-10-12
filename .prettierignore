@@ -1,0 +1,12 @@
+pnpm-lock.yaml
+apps/desktop/src-tauri/Cargo.lock
+ARCHITECTURE.md
+.worktrees
+node_modules
+dist
+target
+apps/web/dist
+apps/desktop/src-tauri/binaries
+apps/desktop/src-tauri/gen
+test-results
+playwright-report

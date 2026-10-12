@@ -6,3 +6,6 @@ test-results/
 playwright-report/
 *.local
 .runtime/
+.pnpm-store/
+apps/desktop/src-tauri/binaries/
+apps/desktop/src-tauri/gen/

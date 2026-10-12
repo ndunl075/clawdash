@@ -124,6 +124,8 @@ function gitBounded(
           GIT_TERMINAL_PROMPT: '0',
           GIT_NO_REPLACE_OBJECTS: '1',
           GIT_CONFIG_NOSYSTEM: '1',
+          GIT_NO_LAZY_FETCH: '1',
+          GIT_ALLOW_PROTOCOL: '',
         },
       },
       (error, stdout) =>
@@ -165,6 +167,13 @@ export async function inspectRepository(directory: string): Promise<RepoDescript
     throw new Error('Make an initial commit before generating a Repo Run.');
   if ((await git(root, ['rev-parse', '--is-shallow-repository'], 64)).toString('ascii').trim() === 'true')
     throw new Error('Fetch full repository history before generating a reproducible Repo Run.');
+  const partial = await git(
+    root,
+    ['config', '--local', '--get-regexp', '^(extensions\\.partialclone|remote\\..*\\.promisor)$'],
+    4096,
+  ).catch(() => Buffer.alloc(0));
+  if (partial.length)
+    throw new Error('Use a complete local clone; partial-clone network fetching is disabled.');
   const tree = (await git(root, ['ls-tree', '-rz', '--full-tree', snapshotId])).toString('utf8');
   const records = tree.split('\0').filter(Boolean);
   if (records.length > MAX_FILES)
@@ -195,13 +204,13 @@ export async function inspectRepository(directory: string): Promise<RepoDescript
     .filter((e) => e.mode === '100644' || e.mode === '100755')
     .filter((e) => e.path.split('/').at(-1) === 'package.json')
     .slice(0, MAX_MANIFESTS)) {
+    // Missing objects are a repository error, not an invalid manifest to silently omit.
+    const size = Number((await git(root, ['cat-file', '-s', entry.object], 64)).toString('ascii').trim());
+    if (!Number.isSafeInteger(size) || size > 65536) continue;
+    const manifest = (await git(root, ['cat-file', 'blob', entry.object], 65536)).toString('utf8');
     try {
       // Object ID originates in bounded ls-tree, never from browser or path interpolation.
-      const size = Number((await git(root, ['cat-file', '-s', entry.object], 64)).toString('ascii').trim());
-      if (!Number.isSafeInteger(size) || size > 65536) continue;
-      const parsed: unknown = JSON.parse(
-        (await git(root, ['cat-file', 'blob', entry.object], 65536)).toString('utf8'),
-      );
+      const parsed: unknown = JSON.parse(manifest);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
       const names = new Set<string>();
       for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
@@ -223,7 +232,7 @@ export async function inspectRepository(directory: string): Promise<RepoDescript
     }
   }
   const ancestry = (await git(root, ['rev-list', '--max-count=1000', snapshotId])).toString('ascii').trim();
-  const dirty = (await git(root, ['status', '--porcelain', '-uno'])).length > 0;
+  const dirty = (await git(root, ['status', '--porcelain', '-uno', '--ignore-submodules=all'])).length > 0;
   const descriptor: Omit<RepoDescriptor, 'fingerprint'> = {
     version: GENERATOR_VERSION,
     snapshotId,

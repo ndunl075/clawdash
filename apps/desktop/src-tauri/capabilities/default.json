@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Bundled local game only; no arbitrary shell or filesystem permissions.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

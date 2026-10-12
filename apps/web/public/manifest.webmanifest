@@ -1,1 +1,11 @@
-{"name":"Clawdash","short_name":"Clawdash","description":"Find your flow. Original offline rhythm platformer.","start_url":"./","scope":"./","display":"standalone","background_color":"#080d0b","theme_color":"#080d0b","icons":[{"src":"./icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}]}
+{
+  "name": "Clawdash",
+  "short_name": "Clawdash",
+  "description": "Find your flow. Original offline rhythm platformer.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#080d0b",
+  "theme_color": "#080d0b",
+  "icons": [{ "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
